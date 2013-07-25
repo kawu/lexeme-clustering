@@ -1,0 +1,43 @@
+name:               lexeme-clustering
+version:            0.1.0
+synopsis:           Grouping morphologically related words
+description:
+    A Haskell implementation of "A Lexeme-Clustering Algorithm
+    for Unsupervised Learning of Morphology" by Maciej Janicki.
+license:            BSD3
+license-file:       LICENSE
+cabal-version:      >= 1.6
+copyright:          Copyright (c) 2013 Jakub Waszczuk
+author:             Jakub Waszczuk
+maintainer:         waszczuk.kuba@gmail.com
+stability:          experimental
+category:           Natural Language Processing
+homepage:           https://github.com/kawu/lexeme-clustering
+build-type:         Simple
+
+library
+    hs-source-dirs: src
+
+    build-depends:
+        base            >= 4        && < 5,
+        containers      >= 0.4      && < 0.6,
+        text            >= 0.11     && < 0.12
+
+    exposed-modules:
+        NLP.LexemeClustering
+
+    other-modules:
+        NLP.LexemeClustering.NGrams
+
+    ghc-options: -Wall -O2
+
+source-repository head
+    type: git
+    location: https://github.com/kawu/lexeme-clustering.git
+
+-- executable concraft-pl
+--     build-depends:
+--         cmdargs >= 0.10 && < 0.11
+--     hs-source-dirs: src, tools
+--     main-is: concraft-pl.hs
+--     ghc-options: -Wall -O2 -threaded -rtsopts

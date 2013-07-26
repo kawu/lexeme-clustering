@@ -26,5 +26,5 @@ toDist m =
 -- Assumption: there are no 0-probability elements in the distribution.
 entropy :: Ord a => Dist a -> Double
 entropy dist = negate $ sum
-    [ p * log p
+    [ p * logBase 2 p
     | (_, p) <- M.toList dist ]

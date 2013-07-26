@@ -9,6 +9,9 @@ module NLP.LexemeClustering
 , readNGrams
 -- * I/O
 , readWords
+-- * Suffix set
+, SufSet
+, decode
 -- * Suffix distribution
 , mkSufDist
 , printSufDist
@@ -83,12 +86,22 @@ readWords path = map L.toStrict . L.lines <$> L.readFile path
 
 
 ----------------------------------------
--- Suffix distribution
+-- Suffix set
 ----------------------------------------
 
 
 -- | A suffix set encoded w.r.t. the suffix automaton.
 type SufSet = I.IntSet
+
+
+-- | Decode suffix set.
+decode :: Enum a => D.DAWG a D.Weight c -> SufSet -> [[a]]
+decode dawg = map (flip byIndex dawg) . I.toList
+
+
+----------------------------------------
+-- Suffix distribution
+----------------------------------------
 
 
 -- | Compute numbers of individual suffix sets in the automaton.
@@ -116,7 +129,7 @@ printSufDist
     -> IO ()
 printSufDist sufDAWG sufDist = do
     forM_ (M.toList sufDist) $ \(sufSet, sufFreq) -> do
-        let sufSet' = map (flip byIndex sufDAWG) (I.toList sufSet)
+        let sufSet' = decode sufDAWG sufSet
         putStr $ "{" ++ intercalate ", " sufSet' ++ "}: "
         print sufFreq
 
@@ -153,12 +166,12 @@ data CMState = CMState {
 
 
 -- | A clustering monad.
-type CM a = ST.State CMState a
+type CM m a = ST.StateT CMState m a
 
 
 -- | Run the CM monad w.r.t. the base distribution and the Kappa parameter.
-runCM :: P.Dist SufSet -> Double -> CM a -> a
-runCM dist kappa = flip ST.evalState $ CMState
+runCM :: Monad m => P.Dist SufSet -> Double -> CM m a -> m a
+runCM dist kappa = flip ST.evalStateT $ CMState
     { entrMemo  = M.empty
     , baseDist  = dist
     , kappa     = kappa }
@@ -166,7 +179,7 @@ runCM dist kappa = flip ST.evalState $ CMState
 
 -- | Compute entropy of the given suffix set.
 -- Results are memoized.
-entropy :: SufSet -> CM Double
+entropy :: Monad m => SufSet -> CM m Double
 entropy x = do
     st@CMState{..} <- ST.get
     case M.lookup x entrMemo of
@@ -179,7 +192,7 @@ entropy x = do
 
 
 -- | Mutual information between two suffix sets.
-mutual :: SufSet -> SufSet -> CM Double
+mutual :: Monad m => SufSet -> SufSet -> CM m Double
 mutual x y = do
     ex <- entropy x
     ey <- entropy y
@@ -193,7 +206,7 @@ mutual x y = do
 
 
 -- | Partition the given suffix set into disjoint subsets.
-partition :: SufSet -> CM (S.Set SufSet)
+partition :: (Functor m, Monad m) => SufSet -> CM m (S.Set SufSet)
 partition sufSet =
     iterWhile updatePar par0
   where

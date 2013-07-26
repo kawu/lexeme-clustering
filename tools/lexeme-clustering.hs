@@ -5,15 +5,15 @@
 
 import           System.Console.CmdArgs
 import           Control.Applicative ((<$>))
--- import           Control.Monad (forM_)
--- import qualified Data.Map as M
+import           Control.Monad (forM_)
+import           Control.Monad.Trans.Class (lift)
+import           Data.List (intercalate)
+import qualified Data.Set as S
+import qualified Data.Map as M
 import qualified Data.Text as T
--- import qualified Data.Text.IO as T
 import qualified Data.DAWG.Static as D
 
 import qualified NLP.LexemeClustering as LC
--- import           NLP.LexemeClustering.NGrams
--- import           NLP.LexemeClustering.DAWG
 
 
 ---------------------------------------
@@ -25,7 +25,8 @@ import qualified NLP.LexemeClustering as LC
 data Cluster = Cluster
     { inputPath :: FilePath
     , freqMin   :: Double
-    , nMax      :: Int }
+    , nMax      :: Int
+    , kappa     :: Double }
     deriving (Data, Typeable, Show)
 
 
@@ -33,7 +34,8 @@ cluster :: Cluster
 cluster = Cluster
     { inputPath = def &= argPos 0 &= typ "INPUT-FILE"
     , freqMin   = 0.001 &= help "Ngram grequency threshold"
-    , nMax      = 8 &= help "Maximum ngram length taken on account" }
+    , nMax      = 8 &= help "Maximum ngram length taken on account"
+    , kappa     = 0.01 &= help "Kappa parameter" }
     &= summary "Grouping morphologically related words"
     &= program "lexeme-clustering"
 
@@ -61,4 +63,13 @@ exec Cluster{..} = do
 
     putStrLn "Compute suffix distribution"
     let sufDist = LC.mkSufDist langDAWG sufDAWG
-    LC.printSufDist sufDAWG sufDist
+    -- LC.printSufDist sufDAWG sufDist
+    LC.runCM sufDist kappa $ do
+        forM_ (M.keys sufDist) $ \sufSet -> do
+            let showSs xs = "{" ++ intercalate ", " xs ++ "}"
+            sufPar <- S.toList <$> LC.partition sufSet
+            lift $ do
+                putStr $ showSs $ LC.decode sufDAWG sufSet
+                putStr " => "
+                putStrLn $ intercalate "; " $
+                    map (showSs . LC.decode sufDAWG) sufPar

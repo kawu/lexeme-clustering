@@ -21,11 +21,14 @@ library
     build-depends:
         base            >= 4        && < 5,
         containers      >= 0.4      && < 0.6,
-        text            >= 0.11     && < 0.12
+        text            >= 0.11     && < 0.12,
+        vector          >= 0.10     && < 0.11,
+        dawg            >= 0.11     && < 0.12
 
     exposed-modules:
         NLP.LexemeClustering,
-        NLP.LexemeClustering.NGrams
+        NLP.LexemeClustering.NGrams,
+        NLP.LexemeClustering.DAWG
 
 --     other-modules:
 --         NLP.LexemeClustering.NGrams

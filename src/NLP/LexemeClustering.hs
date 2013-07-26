@@ -26,7 +26,7 @@ module NLP.LexemeClustering
 ) where
 
 
-import           Control.Monad (forM, forM_, guard)
+import           Control.Monad (forM, forM_, guard, when)
 import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
@@ -39,7 +39,7 @@ import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Vector.Unboxed (Unbox)
 import           Control.Monad.Trans.Maybe (MaybeT (..))
-import           Control.Monad.State.Strict (lift)
+import           Control.Monad.State.Strict (lift, MonadIO(..), liftIO)
 import qualified Control.Monad.State.Strict as ST
 import qualified Data.DAWG.Static as D
 
@@ -110,7 +110,7 @@ decode dawg = map (flip byIndex dawg) . I.toList
 mkSufDist
     :: (Enum a, Ord a, Unbox b)
     => D.DAWG a b c             -- ^ Language automaton
-    -> D.DAWG a (D.Weight) c    -- ^ Suffix automaton
+    -> D.DAWG a D.Weight c      -- ^ Suffix automaton
     -> P.Dist SufSet            -- ^ Suffix distribution
 mkSufDist langDAWG sufDAWG = P.toDist $ M.unionsWith (+)
     [ let sufIDs
@@ -191,13 +191,34 @@ entropy x = do
             return e
 
 
--- | Mutual information between two suffix sets.
-mutual :: Monad m => SufSet -> SufSet -> CM m Double
-mutual x y = do
+-- | Normalized mutual information between two suffix sets.
+mutual :: (Monad m, MonadIO m) => D.DAWG Char D.Weight c -> SufSet -> SufSet -> CM m Double
+mutual sufDAWG x y = do
+    let showSs xs = "{" ++ intercalate ", " xs ++ "}"
     ex <- entropy x
     ey <- entropy y
     e2 <- entropy $ I.union x y
-    return $ ex + ey - e2
+    let mi = ex + ey - e2
+    return $ mi / (min ex ey)
+
+
+-- -- | Mutual information between two suffix sets.
+-- mutual :: (Monad m, MonadIO m) => D.DAWG Char D.Weight c -> SufSet -> SufSet -> CM m Double
+-- mutual sufDAWG x y = do
+--     let showSs xs = "{" ++ intercalate ", " xs ++ "}"
+--     ex <- entropy x
+--     ey <- entropy y
+--     e2 <- entropy $ I.union x y
+--     let mi = ex + ey - e2
+--     -- when (e2 == ey) $ liftIO $ do
+--     when (mi > min ex ey) $ liftIO $ do
+--         putStr "Mutual: "
+--         putStr $ showSs $ decode sufDAWG x
+--         putStr ", "
+--         putStr $ showSs $ decode sufDAWG y
+--         putStr " => "
+--         print (ex, ey, e2, mi)
+--     return mi
 
 
 ----------------------------------------
@@ -206,8 +227,8 @@ mutual x y = do
 
 
 -- | Partition the given suffix set into disjoint subsets.
-partition :: (Functor m, Monad m) => SufSet -> CM m (S.Set SufSet)
-partition sufSet =
+partition :: (Functor m, Monad m, MonadIO m) => SufSet -> D.DAWG Char D.Weight c -> CM m (S.Set SufSet)
+partition sufSet sufDAWG =
     iterWhile updatePar par0
   where
     par0 = S.fromList
@@ -215,7 +236,7 @@ partition sufSet =
         | x <- I.toList sufSet ]
     updatePar xs = runMaybeT $ do
         (x, y, mi) <- max3 =<< (lift.sequence)
-            [ (x, y, ) <$> mutual x y
+            [ (x, y, ) <$> mutual sufDAWG x y
             | x <- S.toList xs
             , y <- S.toList xs, x /= y ]
         k <- ST.gets kappa

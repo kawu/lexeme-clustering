@@ -35,7 +35,7 @@ cluster = Cluster
     { inputPath = def &= argPos 0 &= typ "INPUT-FILE"
     , freqMin   = 0.001 &= help "Ngram grequency threshold"
     , nMax      = 8 &= help "Maximum ngram length taken on account"
-    , kappa     = 0.01 &= help "Kappa parameter" }
+    , kappa     = 0.5 &= help "Kappa parameter" }
     &= summary "Grouping morphologically related words"
     &= program "lexeme-clustering"
 
@@ -67,7 +67,7 @@ exec Cluster{..} = do
     LC.runCM sufDist kappa $ do
         forM_ (M.keys sufDist) $ \sufSet -> do
             let showSs xs = "{" ++ intercalate ", " xs ++ "}"
-            sufPar <- S.toList <$> LC.partition sufSet
+            sufPar <- S.toList <$> LC.partition sufSet sufDAWG
             lift $ do
                 putStr $ showSs $ LC.decode sufDAWG sufSet
                 putStr " => "

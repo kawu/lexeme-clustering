@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE TupleSections #-}
 
 
 module NLP.LexemeClustering
@@ -17,20 +18,25 @@ module NLP.LexemeClustering
 , runCM
 , entropy
 , mutual
+-- * Suffix set partitioning
+, partition
 ) where
 
 
-import           Control.Monad (forM, forM_)
+import           Control.Monad (forM, forM_, guard)
 import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
-import           Data.List (sortBy, intercalate)
+import           Data.List (sortBy, maximumBy, intercalate)
 import qualified Data.IntSet as I
+import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Vector.Unboxed (Unbox)
+import           Control.Monad.Trans.Maybe (MaybeT (..))
+import           Control.Monad.State.Strict (lift)
 import qualified Control.Monad.State.Strict as ST
 import qualified Data.DAWG.Static as D
 
@@ -136,22 +142,26 @@ varDist sufSet sufDist = M.fromListWith (+)
 ----------------------------------------
 
 
--- | State of the clustering monad serves to keep already computed
--- entropy values.
-data CMState = CMState
-    { entrMemo  :: M.Map SufSet Double
-    , baseDist  :: P.Dist SufSet }
+-- | State of the clustering monad.
+data CMState = CMState {
+    -- | Memoization map for entropy values.
+      entrMemo  :: M.Map SufSet Double
+    -- | Base distribution.
+    , baseDist  :: P.Dist SufSet
+    -- | Kappa parameter (maximal mutual information of disjoint subsets).
+    , kappa     :: Double }
 
 
 -- | A clustering monad.
 type CM a = ST.State CMState a
 
 
--- | Run the CM monad w.r.t. the base distribution.
-runCM :: P.Dist SufSet -> CM a -> a
-runCM dist = flip ST.evalState $ CMState
-    { entrMemo = M.empty
-    , baseDist = dist }
+-- | Run the CM monad w.r.t. the base distribution and the Kappa parameter.
+runCM :: P.Dist SufSet -> Double -> CM a -> a
+runCM dist kappa = flip ST.evalState $ CMState
+    { entrMemo  = M.empty
+    , baseDist  = dist
+    , kappa     = kappa }
 
 
 -- | Compute entropy of the given suffix set.
@@ -175,3 +185,40 @@ mutual x y = do
     ey <- entropy y
     e2 <- entropy $ I.union x y
     return $ ex + ey - e2
+
+
+----------------------------------------
+-- Suffix set partitioning
+----------------------------------------
+
+
+-- | Partition the given suffix set into disjoint subsets.
+partition :: SufSet -> CM (S.Set SufSet)
+partition sufSet =
+    iterWhile updatePar par0
+  where
+    par0 = S.fromList
+        [ I.singleton x
+        | x <- I.toList sufSet ]
+    updatePar xs = runMaybeT $ do
+        (x, y, mi) <- max3 =<< (lift.sequence)
+            [ (x, y, ) <$> mutual x y
+            | x <- S.toList xs
+            , y <- S.toList xs, x /= y ]
+        k <- ST.gets kappa
+        guard $ mi >= k
+        return $ S.insert (I.union x y)
+               $ S.delete x
+               $ S.delete y xs
+    max3 [] = MaybeT $ return Nothing
+    max3 xs = return $ maximumBy (comparing _3) xs
+    _3 (_, _, x) = x
+    
+
+-- | Iterate over the value with the given monadic function. 
+iterWhile :: Monad m => (a -> m (Maybe a)) -> a -> m a
+iterWhile f x = do
+    mx <- f x
+    case mx of
+        Nothing -> return x
+        Just y  -> iterWhile f y

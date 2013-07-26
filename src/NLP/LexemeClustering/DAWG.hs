@@ -68,8 +68,8 @@ intersectionWith f dawg dawg' = Trie
     , edges = merge (D.edges dawg) (D.edges dawg') }
   where
     merge xs@((x, d1):xs') ys@((y, d2):ys')
-        | x < y     = merge xs  ys'
-        | x > y     = merge xs' ys
+        | x < y     = merge xs' ys
+        | x > y     = merge xs  ys'
         | otherwise = (x, intersectionWith f d1 d2)
                     : merge xs' ys'
     merge _ _   = []

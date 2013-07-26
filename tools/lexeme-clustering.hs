@@ -59,6 +59,6 @@ exec Cluster{..} = do
     langDAWG <- D.fromLang . map T.unpack <$> LC.readWords inputPath
     putStr "Number of language DAWG states: " >> print (D.numStates langDAWG)
 
-    putStrLn "Compute map with suffix sets"
-    let sufMap = LC.collSufs langDAWG sufDAWG
-    LC.printSufs sufDAWG sufMap
+    putStrLn "Compute suffix distribution"
+    let sufDist = LC.mkSufDist langDAWG sufDAWG
+    LC.printSufDist sufDAWG sufDist

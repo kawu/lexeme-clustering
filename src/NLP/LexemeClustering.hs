@@ -8,9 +8,15 @@ module NLP.LexemeClustering
 , readNGrams
 -- * I/O
 , readWords
--- * Suffix sets
-, collSufs
-, printSufs
+-- * Suffix distribution
+, mkSufDist
+, printSufDist
+-- * Entropy and mutual information
+, CMState (..)
+, CM
+, runCM
+, entropy
+, mutual
 ) where
 
 
@@ -19,20 +25,23 @@ import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
 import           Data.List (sortBy, intercalate)
-import qualified Data.Set as S
+import qualified Data.IntSet as I
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Vector.Unboxed (Unbox)
+import qualified Control.Monad.State.Strict as ST
 import qualified Data.DAWG.Static as D
 
 import qualified NLP.LexemeClustering.NGrams as NG
+import qualified NLP.LexemeClustering.Dist as P
+import           NLP.LexemeClustering.Utils
 import           NLP.LexemeClustering.DAWG
 
 
 ----------------------------------------
--- n-grams
+-- N-grams
 ----------------------------------------
 
 
@@ -51,7 +60,7 @@ data NGramConf = NGramConf {
 readNGrams :: NGramConf -> FilePath -> IO [(T.Text, Double)]
 readNGrams NGramConf{..} path = concat <$> do
     forM [1..nMax] $ \n -> do
-        ngs <- NG.toFreq . NG.ngrams n <$> readWords path
+        ngs <- P.toDist . NG.ngrams n <$> readWords path
         return $ reverse $ sortBy (comparing snd)
             [x | x <- M.toList ngs, snd x >= freqMin]
 
@@ -68,21 +77,25 @@ readWords path = map L.toStrict . L.lines <$> L.readFile path
 
 
 ----------------------------------------
--- Suffix sets
+-- Suffix distribution
 ----------------------------------------
+
+
+-- | A suffix set encoded w.r.t. the suffix automaton.
+type SufSet = I.IntSet
 
 
 -- | Compute numbers of individual suffix sets in the automaton.
 -- Individual IDs in the output maps correspond to IDs in the
 -- suffix automaton.
-collSufs
+mkSufDist
     :: (Enum a, Ord a, Unbox b)
     => D.DAWG a b c             -- ^ Language automaton
     -> D.DAWG a (D.Weight) c    -- ^ Suffix automaton
-    -> M.Map (S.Set Int) Int    -- ^ Numbers of suffix subsets
-collSufs langDAWG sufDAWG = M.unionsWith (+)
+    -> P.Dist SufSet            -- ^ Suffix distribution
+mkSufDist langDAWG sufDAWG = P.toDist $ M.unionsWith (+)
     [ let sufIDs
-            = S.fromList
+            = I.fromList
             $ map (flip index sufDAWG)
             $ map fst $ unTrie
             $ intersection sufDAWG subDAWG
@@ -91,29 +104,74 @@ collSufs langDAWG sufDAWG = M.unionsWith (+)
 
 
 -- | Print information about numbers of individual suffix sets.
-printSufs
+printSufDist
     :: D.DAWG Char (D.Weight) c -- ^ Suffix automaton
-    -> M.Map (S.Set Int) Int    -- ^ Numbers of suffix subsets
+    -> P.Dist SufSet            -- ^ Suffix distribution
     -> IO ()
-printSufs sufDAWG sufMap = do
-    forM_ (M.toList sufMap) $ \(sufSet, sufNum) -> do
-        let sufSet' = map (flip byIndex sufDAWG) (S.toList sufSet)
+printSufDist sufDAWG sufDist = do
+    forM_ (M.toList sufDist) $ \(sufSet, sufFreq) -> do
+        let sufSet' = map (flip byIndex sufDAWG) (I.toList sufSet)
         putStr $ "{" ++ intercalate ", " sufSet' ++ "}: "
-        print sufNum 
+        print sufFreq
+
+
+-----------------------------------------------------------------------
+-- Random variable distribution
+--
+-- Here, a random variable is also a suffix set.  Value of the random
+-- variable w.r.t. the elementary suffix set is the intersection
+-- of the two sets.
+-----------------------------------------------------------------------
+
+
+-- | Distribution of the random variable w.r.t. the base distribution.
+varDist :: SufSet -> P.Dist SufSet -> P.Dist SufSet
+varDist sufSet sufDist = M.fromListWith (+)
+    [ (I.intersection sufSet sufSet', q)
+    | (sufSet', q) <- M.toList sufDist ]
 
 
 ----------------------------------------
--- Utils
+-- Entropy and mutual information
 ----------------------------------------
 
 
-index :: Enum a => [a] -> D.DAWG a D.Weight c -> Int
-index x dawg = case D.index x dawg of
-    Nothing -> error "index: Nothing"
-    Just i  -> i
+-- | State of the clustering monad serves to keep already computed
+-- entropy values.
+data CMState = CMState
+    { entrMemo  :: M.Map SufSet Double
+    , baseDist  :: P.Dist SufSet }
 
 
-byIndex :: Enum a => Int -> D.DAWG a D.Weight c -> [a]
-byIndex i dawg = case D.byIndex i dawg of
-    Nothing -> error "byIndex: Nothing"
-    Just x  -> x
+-- | A clustering monad.
+type CM a = ST.State CMState a
+
+
+-- | Run the CM monad w.r.t. the base distribution.
+runCM :: P.Dist SufSet -> CM a -> a
+runCM dist = flip ST.evalState $ CMState
+    { entrMemo = M.empty
+    , baseDist = dist }
+
+
+-- | Compute entropy of the given suffix set.
+-- Results are memoized.
+entropy :: SufSet -> CM Double
+entropy x = do
+    st@CMState{..} <- ST.get
+    case M.lookup x entrMemo of
+        Just e  -> return e
+        Nothing -> do
+            let e = P.entropy $ varDist x baseDist
+                memo = M.insert x e entrMemo
+            ST.put $ st { entrMemo = memo }
+            return e
+
+
+-- | Mutual information between two suffix sets.
+mutual :: SufSet -> SufSet -> CM Double
+mutual x y = do
+    ex <- entropy x
+    ey <- entropy y
+    e2 <- entropy $ I.union x y
+    return $ ex + ey - e2

@@ -23,12 +23,14 @@ library
         containers      >= 0.4      && < 0.6,
         text            >= 0.11     && < 0.12,
         vector          >= 0.10     && < 0.11,
+        mtl             >= 2.1      && < 2.2,
         dawg            >= 0.11     && < 0.12
 
     exposed-modules:
         NLP.LexemeClustering,
         NLP.LexemeClustering.NGrams,
-        NLP.LexemeClustering.DAWG
+        NLP.LexemeClustering.DAWG,
+        NLP.LexemeClustering.Utils
 
 --     other-modules:
 --         NLP.LexemeClustering.NGrams

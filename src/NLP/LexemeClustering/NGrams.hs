@@ -1,3 +1,6 @@
+-- | Collecting suffix n-grams.
+
+
 module NLP.LexemeClustering.NGrams
 ( ngrams
 , ngram
@@ -7,11 +10,11 @@ module NLP.LexemeClustering.NGrams
 
 import           Control.Arrow (second)
 import           Data.Maybe (mapMaybe)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 
 
--- | Collect n-grams of the given size throughout the collection
+-- | Collect suffix n-grams of the given size throughout the collection
 -- of words.  The resulting map will contain numbers of occurences
 -- of the individual n-grams.
 ngrams :: Int -> [T.Text] -> M.Map T.Text Int
@@ -20,7 +23,7 @@ ngrams k =
     in  M.unionsWith (+) . map mkItem . mapMaybe (ngram k)
 
 
--- | Take n-gram of the given word.
+-- | Take suffix n-gram of the given word.
 ngram :: Int -> T.Text -> Maybe T.Text
 ngram k x
     | n > k     = Just $ T.drop (n-k) x 

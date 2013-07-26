@@ -5,9 +5,7 @@ module NLP.LexemeClustering.NGrams
 ) where
 
 
--- import           Control.Applicative (second)
 import           Control.Arrow (second)
-import           Data.Monoid (mconcat)
 import           Data.Maybe (mapMaybe)
 import qualified Data.Map as M
 import qualified Data.Text as T
@@ -19,7 +17,7 @@ import qualified Data.Text as T
 ngrams :: Int -> [T.Text] -> M.Map T.Text Int
 ngrams k =
     let mkItem x = M.singleton x 1
-    in  mconcat . map mkItem . mapMaybe (ngram k)
+    in  M.unionsWith (+) . map mkItem . mapMaybe (ngram k)
 
 
 -- | Take n-gram of the given word.
@@ -35,4 +33,5 @@ ngram k x
 toFreq :: Ord a => M.Map a Int -> M.Map a Double
 toFreq m =
     let n = fromIntegral $ sum $ M.elems m
-    in  M.fromList $ map (second $ (/n).fromIntegral) $ M.toList m
+        norm = second $ (/n) . fromIntegral
+    in  M.fromList $ map norm $ M.toList m

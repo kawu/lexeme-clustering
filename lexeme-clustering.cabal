@@ -24,10 +24,11 @@ library
         text            >= 0.11     && < 0.12
 
     exposed-modules:
-        NLP.LexemeClustering
-
-    other-modules:
+        NLP.LexemeClustering,
         NLP.LexemeClustering.NGrams
+
+--     other-modules:
+--         NLP.LexemeClustering.NGrams
 
     ghc-options: -Wall -O2
 

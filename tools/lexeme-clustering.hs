@@ -48,19 +48,20 @@ main = exec =<< cmdArgs cluster
 
 exec :: Cluster -> IO ()
 exec Cluster{..} = do
-    putStrLn "Collecting suffixes"
+    putStrLn "# Collecting suffixes"
     let ngCfg = LC.NGramConf { LC.freqMin = freqMin, LC.nMax = nMax }
     sufDAWG <- D.weigh . D.fromLang . map (T.unpack . fst)
         <$> LC.readNGrams ngCfg inputPath
-    putStr "Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
+    putStr "# Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
 
-    putStrLn "Collecting words"
+    putStrLn "# Collecting words"
     langDAWG <- D.weigh . D.fromLang . map T.unpack <$> LC.readWords inputPath
-    putStr "Number of language DAWG states: " >> print (D.numStates langDAWG)
+    putStr "# Number of language DAWG states: " >> print (D.numStates langDAWG)
 
-    -- putStrLn "Compute suffix distribution"
+    putStrLn "# Suffix partiotioning"
     let sufDist = LC.mkSufDist langDAWG sufDAWG
-    -- LC.printSufDist sufDAWG sufDist
     parMap <- LC.runCM sufDist kappa $ LC.partitionMap sufDAWG
+
+    putStrLn "# Clustering"
     forM_ (LC.cluster langDAWG sufDAWG parMap) $ \xs -> do
-        putStrLn $ "{" ++ intercalate ", " xs ++ "}"
+        putStrLn $ intercalate ", " xs

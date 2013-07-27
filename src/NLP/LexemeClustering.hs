@@ -23,10 +23,13 @@ module NLP.LexemeClustering
 , mutual
 -- * Suffix set partitioning
 , partition
+, partitionMap
+-- * Lexeme clustering
+, cluster
 ) where
 
 
-import           Control.Monad (forM, forM_, guard)
+import           Control.Monad (forM, forM_, guard, foldM)
 import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
@@ -39,12 +42,13 @@ import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Vector.Unboxed (Unbox)
 import           Control.Monad.Trans.Maybe (MaybeT (..))
-import           Control.Monad.State.Strict (lift)
+import           Control.Monad.State.Strict (lift, liftIO, MonadIO)
 import qualified Control.Monad.State.Strict as ST
 import qualified Data.DAWG.Static as D
 
 import qualified NLP.LexemeClustering.NGrams as NG
 import qualified NLP.LexemeClustering.Dist as P
+import qualified NLP.LexemeClustering.DisjointSet as J
 import           NLP.LexemeClustering.Utils
 import           NLP.LexemeClustering.DAWG
 
@@ -113,13 +117,21 @@ mkSufDist
     -> D.DAWG a D.Weight c      -- ^ Suffix automaton
     -> P.Dist SufSet            -- ^ Suffix distribution
 mkSufDist langDAWG sufDAWG = P.toDist $ M.unionsWith (+)
-    [ let sufIDs
-            = I.fromList
-            $ map (flip index sufDAWG)
-            $ map fst $ unTrie
-            $ intersection sufDAWG subDAWG
-      in  M.singleton sufIDs 1
-    | subDAWG <- subDAWGs langDAWG ]
+    [ M.singleton (mkSufSet sufDAWG subDAWG) 1
+    | subDAWG <- map snd $ traverse langDAWG ]
+
+
+-- | Make suffix set from two automatons.
+mkSufSet
+    :: (Enum a, Ord a, Unbox b)
+    => D.DAWG a D.Weight c      -- ^ Suffix automaton
+    -> D.DAWG a b c             -- ^ Language sub-automaton
+    -> SufSet                   -- ^ Suffix set
+mkSufSet sufDAWG subDAWG
+    = I.fromList
+    $ map (flip index sufDAWG)
+    $ map fst $ unTrie
+    $ intersection sufDAWG subDAWG
 
 
 -- | Print information about numbers of individual suffix sets.
@@ -256,7 +268,52 @@ iterWhile f x = do
         Just y  -> iterWhile f y
 
 
--- | Enumerate pairs of the given list.
-pairs :: [a] -> [(a, a)]
-pairs (x:xs) = [(x, y) | y <- xs] ++ pairs xs
-pairs [] = []
+-- | Compute suffix partitions for individual suffix sets
+-- from the suffix distribution.
+partitionMap
+    :: (Functor m, Monad m, MonadIO m)
+    => D.DAWG Char D.Weight c
+    -> CM m (M.Map SufSet (S.Set SufSet))
+partitionMap sufDAWG = do
+    sufDist <- ST.gets baseDist
+    let foldM' x xs f = foldM f x xs
+    foldM' M.empty (M.keys sufDist) $ \sufMap sufSet -> do
+        let showSs xs = "{" ++ intercalate ", " xs ++ "}"
+        sufPar <- partition sufSet
+        liftIO $ do
+            putStr $ showSs $ decode sufDAWG sufSet
+            putStr " => "
+            putStrLn $ intercalate "; " $
+                map (showSs . decode sufDAWG) (S.toList sufPar)
+        return $ M.insert sufSet sufPar sufMap
+
+
+----------------------------------------
+-- Lexeme clustering
+----------------------------------------
+
+
+-- | Perform clustering w.r.t. the partition map.
+cluster
+    :: (Enum a, Ord a)
+    => D.DAWG a D.Weight c          -- ^ Language automaton
+    -> D.DAWG a D.Weight c          -- ^ Suffix automaton
+    -> M.Map SufSet (S.Set SufSet)  -- ^ Partition map
+    -> [[[a]]]
+cluster langDAWG sufDAWG parMap =
+    [ map (flip byIndex langDAWG) clt
+    | clt <- J.toList disj ]
+  where
+    -- Disjoint set.
+    disj = J.fromList (D.size langDAWG) eqRel
+    -- Equivalence relation pairs.
+    eqRel = concatMap eqRelOn $ traverse langDAWG
+    -- Equivalence relation pairs at the given position in the language DAWG.
+    eqRelOn (stem, subDAWG) = concat
+        [ pairs
+            [ index (stem ++ suf) langDAWG
+            | suf <- decode sufDAWG part ]
+        | part <- sufPar ]
+      where
+        sufSet = mkSufSet sufDAWG subDAWG
+        sufPar = S.toList $ parMap M.! sufSet

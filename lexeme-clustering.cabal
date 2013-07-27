@@ -23,6 +23,7 @@ library
         containers      >= 0.4      && < 0.6,
         text            >= 0.11     && < 0.12,
         vector          >= 0.10     && < 0.11,
+        primitive       >= 0.5      && < 0.6,
         mtl             >= 2.1      && < 2.2,
         transformers    >= 0.3      && < 0.4,
         dawg            >= 0.11     && < 0.12
@@ -31,10 +32,10 @@ library
         NLP.LexemeClustering,
         NLP.LexemeClustering.NGrams,
         NLP.LexemeClustering.DAWG,
+        NLP.LexemeClustering.DisjointSet,
         NLP.LexemeClustering.Utils
 
 --     other-modules:
---         NLP.LexemeClustering.NGrams
 
     ghc-options: -Wall -O2
 

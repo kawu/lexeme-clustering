@@ -6,10 +6,7 @@
 import           System.Console.CmdArgs
 import           Control.Applicative ((<$>))
 import           Control.Monad (forM_)
-import           Control.Monad.Trans.Class (lift)
 import           Data.List (intercalate)
-import qualified Data.Set as S
-import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.DAWG.Static as D
 
@@ -58,18 +55,12 @@ exec Cluster{..} = do
     putStr "Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
 
     putStrLn "Collecting words"
-    langDAWG <- D.fromLang . map T.unpack <$> LC.readWords inputPath
+    langDAWG <- D.weigh . D.fromLang . map T.unpack <$> LC.readWords inputPath
     putStr "Number of language DAWG states: " >> print (D.numStates langDAWG)
 
-    putStrLn "Compute suffix distribution"
+    -- putStrLn "Compute suffix distribution"
     let sufDist = LC.mkSufDist langDAWG sufDAWG
     -- LC.printSufDist sufDAWG sufDist
-    LC.runCM sufDist kappa $ do
-        forM_ (M.keys sufDist) $ \sufSet -> do
-            let showSs xs = "{" ++ intercalate ", " xs ++ "}"
-            sufPar <- S.toList <$> LC.partition sufSet
-            lift $ do
-                putStr $ showSs $ LC.decode sufDAWG sufSet
-                putStr " => "
-                putStrLn $ intercalate "; " $
-                    map (showSs . LC.decode sufDAWG) sufPar
+    parMap <- LC.runCM sufDist kappa $ LC.partitionMap sufDAWG
+    forM_ (LC.cluster langDAWG sufDAWG parMap) $ \xs -> do
+        putStrLn $ "{" ++ intercalate ", " xs ++ "}"

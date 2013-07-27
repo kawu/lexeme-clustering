@@ -12,11 +12,12 @@ module NLP.LexemeClustering.DAWG
 -- ** Intersection
 , intersection
 , intersectionWith
--- ** Sub-DAWGs
-, subDAWGs
+-- ** Traverse
+, traverse
 ) where
 
 
+import           Control.Arrow (first)
 import           Data.Vector.Unboxed (Unbox)
 import qualified Data.DAWG.Static as D
 
@@ -90,9 +91,9 @@ intersection = intersectionWith const
 --------------------------------------------
 
 
--- | List all sub'D.DAWG's (including the given 'DAWG') of the given 'D.DAWG'.
--- Note: sub-DAWGs which occur multiple times in the given 'DAWG' (i.e. are
--- reachable through multiple paths from the root node) will be also present
--- multiple times in the resulting list.
-subDAWGs :: Enum a => D.DAWG a b c -> [D.DAWG a b c]
-subDAWGs dawg = dawg : concatMap (subDAWGs.snd) (D.edges dawg)
+-- | List all sub'D.DAWG's (including the given 'DAWG') of the given 'D.DAWG'
+-- with corresponding paths.
+traverse :: Enum a => D.DAWG a b c -> [([a], D.DAWG a b c)]
+traverse dawg =
+    let lower (x, dawg') = map (first (x:)) (traverse dawg')
+    in  ([], dawg) : concatMap lower (D.edges dawg)

@@ -67,7 +67,7 @@ exec Cluster{..} = do
     LC.runCM sufDist kappa $ do
         forM_ (M.keys sufDist) $ \sufSet -> do
             let showSs xs = "{" ++ intercalate ", " xs ++ "}"
-            sufPar <- S.toList <$> LC.partition sufSet sufDAWG
+            sufPar <- S.toList <$> LC.partition sufSet
             lift $ do
                 putStr $ showSs $ LC.decode sufDAWG sufSet
                 putStr " => "

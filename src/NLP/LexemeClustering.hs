@@ -26,7 +26,7 @@ module NLP.LexemeClustering
 ) where
 
 
-import           Control.Monad (forM, forM_, guard, when)
+import           Control.Monad (forM, forM_, guard)
 import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
@@ -39,7 +39,7 @@ import qualified Data.Text.Lazy as L
 import qualified Data.Text.Lazy.IO as L
 import           Data.Vector.Unboxed (Unbox)
 import           Control.Monad.Trans.Maybe (MaybeT (..))
-import           Control.Monad.State.Strict (lift, MonadIO(..), liftIO)
+import           Control.Monad.State.Strict (lift)
 import qualified Control.Monad.State.Strict as ST
 import qualified Data.DAWG.Static as D
 
@@ -192,9 +192,8 @@ entropy x = do
 
 
 -- | Normalized mutual information between two suffix sets.
-mutual :: (Monad m, MonadIO m) => D.DAWG Char D.Weight c -> SufSet -> SufSet -> CM m Double
-mutual sufDAWG x y = do
-    let showSs xs = "{" ++ intercalate ", " xs ++ "}"
+mutual :: Monad m => SufSet -> SufSet -> CM m Double
+mutual x y = do
     ex <- entropy x
     ey <- entropy y
     e2 <- entropy $ I.union x y
@@ -227,18 +226,17 @@ mutual sufDAWG x y = do
 
 
 -- | Partition the given suffix set into disjoint subsets.
-partition :: (Functor m, Monad m, MonadIO m) => SufSet -> D.DAWG Char D.Weight c -> CM m (S.Set SufSet)
-partition sufSet sufDAWG =
+partition :: (Functor m, Monad m) => SufSet -> CM m (S.Set SufSet)
+partition sufSet =
     iterWhile updatePar par0
   where
     par0 = S.fromList
         [ I.singleton x
         | x <- I.toList sufSet ]
     updatePar xs = runMaybeT $ do
-        (x, y, mi) <- max3 =<< (lift.sequence)
-            [ (x, y, ) <$> mutual sufDAWG x y
-            | x <- S.toList xs
-            , y <- S.toList xs, x /= y ]
+        (x, y, mi) <- max3 =<< sequence
+            [ (x, y, ) <$> lift (mutual x y)
+            | (x, y) <- pairs (S.toList xs) ]
         k <- ST.gets kappa
         guard $ mi >= k
         return $ S.insert (I.union x y)
@@ -256,3 +254,9 @@ iterWhile f x = do
     case mx of
         Nothing -> return x
         Just y  -> iterWhile f y
+
+
+-- | Enumerate pairs of the given list.
+pairs :: [a] -> [(a, a)]
+pairs (x:xs) = [(x, y) | y <- xs] ++ pairs xs
+pairs [] = []

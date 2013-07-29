@@ -23,6 +23,7 @@ data Cluster = Cluster
     { inputPath :: FilePath
     , freqMin   :: Double
     , nMax      :: Int
+    , eps       :: Bool
     , kappa     :: Double }
     deriving (Data, Typeable, Show)
 
@@ -30,8 +31,9 @@ data Cluster = Cluster
 cluster :: Cluster
 cluster = Cluster
     { inputPath = def &= argPos 0 &= typ "INPUT-FILE"
-    , freqMin   = 0.001 &= help "Ngram grequency threshold"
-    , nMax      = 8 &= help "Maximum ngram length taken on account"
+    , freqMin   = 0.001 &= help "N-gram frequency threshold"
+    , nMax      = 8 &= help "Maximum n-gram length taken on account"
+    , eps       = False &= help "Add epsilon to suffix set"
     , kappa     = 0.5 &= help "Kappa parameter" }
     &= summary "Grouping morphologically related words"
     &= program "lexeme-clustering"
@@ -48,15 +50,19 @@ main = exec =<< cmdArgs cluster
 
 exec :: Cluster -> IO ()
 exec Cluster{..} = do
-    putStrLn "# Collecting suffixes"
-    let ngCfg = LC.NGramConf { LC.freqMin = freqMin, LC.nMax = nMax }
-    sufDAWG <- D.weigh . D.fromLang . map (T.unpack . fst)
-        <$> LC.readNGrams ngCfg inputPath
-    putStr "# Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
-
     putStrLn "# Collecting words"
     langDAWG <- D.weigh . D.fromLang . map T.unpack <$> LC.readWords inputPath
     putStr "# Number of language DAWG states: " >> print (D.numStates langDAWG)
+
+    putStrLn "# Collecting suffixes"
+    let ngCfg = LC.NGramConf
+            { LC.freqMin = freqMin
+            , LC.nMax    = nMax
+            , LC.eps     = eps }
+        sufDAWG = D.weigh $ D.fromLang
+                $ map (T.unpack . fst)
+                $ LC.ngrams ngCfg langDAWG
+    putStr "# Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
 
     putStrLn "# Suffix partiotioning"
     let sufDist = LC.mkSufDist langDAWG sufDAWG

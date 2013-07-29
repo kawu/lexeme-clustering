@@ -1,3 +1,4 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE TupleSections #-}
 
@@ -6,7 +7,7 @@ module NLP.LexemeClustering
 (
 -- * N-grams
   NGramConf (..)
-, readNGrams
+, ngrams
 -- * I/O
 , readWords
 -- * Suffix set
@@ -29,7 +30,7 @@ module NLP.LexemeClustering
 ) where
 
 
-import           Control.Monad (forM, forM_, guard, foldM)
+import           Control.Monad (forM_, guard, foldM)
 import           Control.Applicative ((<$>))
 
 import           Data.Ord (comparing)
@@ -63,19 +64,29 @@ data NGramConf = NGramConf {
     -- | Minimum frequency of an n-gram.
       freqMin   :: Double
     -- | Maximum length of n-grams taken into account.
-    , nMax      :: Int }
+    , nMax      :: Int
+    -- | Add epsilon suffix.
+    , eps       :: Bool }
     deriving (Show, Eq, Ord)
 
 
--- | Read a list of suffix n-grams with lengths of the @[1..n]@ form,
+-- | Compute a list of suffix n-grams with lengths of the @[1..n]@ form,
 -- where @n@ is the given argument.  Only ngrams with sufficiently
 -- high frequency will be preserved.
-readNGrams :: NGramConf -> FilePath -> IO [(T.Text, Double)]
-readNGrams NGramConf{..} path = concat <$> do
-    forM [1..nMax] $ \n -> do
-        ngs <- P.toDist . NG.ngrams n <$> readWords path
-        return $ reverse $ sortBy (comparing snd)
-            [x | x <- M.toList ngs, snd x >= freqMin]
+ngrams
+    :: Unbox b
+    => NGramConf
+    -> D.DAWG Char b c      -- ^ Language automaton
+    -> [(T.Text, Double)]
+ngrams NGramConf{..} dawg =
+    withEps $ concatMap ngramsFor [1 .. nMax]
+  where
+    withEps | eps       = (("", 1) :)
+            | otherwise = id
+    ngramsFor n =
+        let ngs = P.toDist $ NG.ngrams n $ map T.pack $ D.keys dawg
+        in  reverse $ sortBy (comparing snd)
+                [x | x <- M.toList ngs, snd x >= freqMin]
 
 
 ----------------------------------------
@@ -269,7 +280,7 @@ iterWhile f x = do
 
 
 -- | Compute suffix partitions for individual suffix sets
--- from the suffix distribution.
+-- on the basis of the suffix distribution.
 partitionMap
     :: (Functor m, Monad m, MonadIO m)
     => D.DAWG Char D.Weight c

@@ -24,6 +24,7 @@ data Cluster = Cluster
     , freqMin   :: Double
     , nMax      :: Int
     , eps       :: Bool
+    , normMut   :: Bool
     , kappa     :: Double }
     deriving (Data, Typeable, Show)
 
@@ -34,7 +35,8 @@ cluster = Cluster
     , freqMin   = 0.001 &= help "N-gram frequency threshold"
     , nMax      = 8 &= help "Maximum n-gram length taken on account"
     , eps       = False &= help "Add epsilon to suffix set"
-    , kappa     = 0.5 &= help "Kappa parameter" }
+    , normMut   = False &= help "Normalize mutual information"
+    , kappa     = 0.01 &= help "Kappa parameter" }
     &= summary "Grouping morphologically related words"
     &= program "lexeme-clustering"
 
@@ -64,9 +66,13 @@ exec Cluster{..} = do
                 $ LC.ngrams ngCfg langDAWG
     putStr "# Number of suffix DAWG states: " >> print (D.numStates sufDAWG)
 
-    putStrLn "# Suffix partiotioning"
+    putStrLn "# Suffix partitioning"
     let sufDist = LC.mkSufDist langDAWG sufDAWG
-    parMap <- LC.runCM sufDist kappa $ LC.partitionMap sufDAWG
+        cmCfg = LC.CMEnv
+            { LC.baseDist   = sufDist
+            , LC.normMut    = normMut
+            , LC.kappa      = kappa }
+    parMap <- LC.runCM cmCfg $ LC.partitionMap sufDAWG
 
     putStrLn "# Clustering"
     forM_ (LC.cluster langDAWG sufDAWG parMap) $ \xs -> do

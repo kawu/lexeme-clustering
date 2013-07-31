@@ -17,7 +17,8 @@ module NLP.LexemeClustering
 , mkSufDist
 , printSufDist
 -- * Entropy and mutual information
-, CMState (..)
+, CMEnv (..)
+, CMState
 , CM
 , runCM
 , entropy
@@ -45,6 +46,7 @@ import           Data.Vector.Unboxed (Unbox)
 import           Control.Monad.Trans.Maybe (MaybeT (..))
 import           Control.Monad.State.Strict (lift, liftIO, MonadIO)
 import qualified Control.Monad.State.Strict as ST
+import qualified Control.Monad.Reader as R
 import qualified Data.DAWG.Static as D
 
 import qualified NLP.LexemeClustering.NGrams as NG
@@ -178,50 +180,55 @@ varDist sufSet sufDist = M.fromListWith (+)
 ----------------------------------------
 
 
--- | State of the clustering monad.
-data CMState = CMState {
-    -- | Memoization map for entropy values.
-      entrMemo  :: M.Map SufSet Double
+-- | Environment of the clustering monad.
+data CMEnv = CMEnv {
     -- | Base distribution.
-    , baseDist  :: P.Dist SufSet
-    -- | Kappa parameter (maximal mutual information of disjoint subsets).
+      baseDist  :: P.Dist SufSet
+    -- | Normalize mutual information? 
+    , normMut   :: Bool
+    -- | Kappa parameter (maximal mutual information between disjoint subsets).
     , kappa     :: Double }
 
 
+-- | State of the clustering monad: memoization map for entropy values.
+type CMState = M.Map SufSet Double
+
+
 -- | A clustering monad.
-type CM m a = ST.StateT CMState m a
+type CM m a = ST.StateT CMState (R.ReaderT CMEnv m) a
 
 
 -- | Run the CM monad w.r.t. the base distribution and the Kappa parameter.
-runCM :: Monad m => P.Dist SufSet -> Double -> CM m a -> m a
-runCM dist kappa = flip ST.evalStateT $ CMState
-    { entrMemo  = M.empty
-    , baseDist  = dist
-    , kappa     = kappa }
+runCM :: Monad m => CMEnv -> CM m a -> m a
+runCM env cm = R.runReaderT (ST.evalStateT cm M.empty) env
+-- runCM env cm = ST.evalStateT (R.runReaderT cm env) M.empty
 
 
 -- | Compute entropy of the given suffix set.
 -- Results are memoized.
 entropy :: Monad m => SufSet -> CM m Double
 entropy x = do
-    st@CMState{..} <- ST.get
+    CMEnv{..} <- R.ask
+    entrMemo  <- ST.get
     case M.lookup x entrMemo of
         Just e  -> return e
         Nothing -> do
             let e = P.entropy $ varDist x baseDist
-                memo = M.insert x e entrMemo
-            ST.put $ st { entrMemo = memo }
+            ST.put $ M.insert x e entrMemo
             return e
 
 
 -- | Normalized mutual information between two suffix sets.
 mutual :: Monad m => SufSet -> SufSet -> CM m Double
 mutual x y = do
+    doNorm <- R.asks normMut
     ex <- entropy x
     ey <- entropy y
     e2 <- entropy $ I.union x y
     let mi = ex + ey - e2
-    return $ mi / (min ex ey)
+    return $ if doNorm
+        then mi / (min ex ey)
+        else mi
 
 
 -- -- | Mutual information between two suffix sets.
@@ -260,7 +267,7 @@ partition sufSet =
         (x, y, mi) <- max3 =<< sequence
             [ (x, y, ) <$> lift (mutual x y)
             | (x, y) <- pairs (S.toList xs) ]
-        k <- ST.gets kappa
+        k <- R.asks kappa
         guard $ mi >= k
         return $ S.insert (I.union x y)
                $ S.delete x
@@ -286,7 +293,7 @@ partitionMap
     => D.DAWG Char D.Weight c
     -> CM m (M.Map SufSet (S.Set SufSet))
 partitionMap sufDAWG = do
-    sufDist <- ST.gets baseDist
+    sufDist <- R.asks baseDist
     let foldM' x xs f = foldM f x xs
     foldM' M.empty (M.keys sufDist) $ \sufMap sufSet -> do
         let showSs xs = "{" ++ intercalate ", " xs ++ "}"

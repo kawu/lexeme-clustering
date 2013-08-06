@@ -28,8 +28,8 @@ can be used to cluster a list of words specified in the input file.
 Input
 -----
 
-ahe input data should consists of a list of words, each word in a separate line.
-Words don'tehave to be given in any specific order and duplicates are acceptable.
+The input data should consists of a list of words, each word in a separate line.
+Words don't have to be given in any specific order and duplicates are acceptable.
 For example:
 
     psalm
@@ -69,7 +69,7 @@ process, for example:
 * `--normmut`: Normalize mutual information to a `[0, 1]` range.
   The `kappa` parameter has to be adapted accordingly.
 * `--kappa`: Kappa parameter, i.e. minimal mutual information needed
-  to connect two suffix sets.
+  to join two suffix sets.
 
 Run `lexeme-clustering --help` to see the complete list of program arguments.
 
